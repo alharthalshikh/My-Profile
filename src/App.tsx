@@ -10,6 +10,7 @@ import AdminPanel from './components/AdminPanel';
 import LikeButton from './components/LikeButton';
 import ScrollToTop from './components/ScrollToTop';
 
+import { useData } from './context/DataContext';
 import { auth } from './lib/firebase';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 
