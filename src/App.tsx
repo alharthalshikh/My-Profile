@@ -10,7 +10,8 @@ import AdminPanel from './components/AdminPanel';
 import LikeButton from './components/LikeButton';
 import ScrollToTop from './components/ScrollToTop';
 
-import { useData } from './context/DataContext';
+import { auth } from './lib/firebase';
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 
 export default function App() {
   const { loading, data } = useData();
@@ -35,14 +36,16 @@ export default function App() {
   // 1. Check login status & Set up Scroll Animations
   useEffect(() => {
     const adminEmail = import.meta.env.VITE_ADMIN_EMAIL;
-    const init = async () => {
-      const { supabase } = await import('./lib/supabase');
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session && session.user.email === adminEmail) {
+    
+    // Firebase Auth State Listener
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user && user.email === adminEmail) {
         setIsAdmin(true);
+      } else {
+        setIsAdmin(false);
+        setShowPanel(false);
       }
-    };
-    init();
+    });
 
     // Listen for custom "open-admin-login" event from Footer
     const handleOpenLogin = () => setShowLogin(true);
@@ -63,7 +66,11 @@ export default function App() {
     const elements = document.querySelectorAll('.animate-on-scroll');
     elements.forEach((el) => observer.observe(el));
 
-    return () => observer.disconnect();
+    return () => {
+      unsubscribe();
+      observer.disconnect();
+      window.removeEventListener('open-admin-login', handleOpenLogin);
+    };
   }, [loading, data]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -71,30 +78,32 @@ export default function App() {
     setLoginError('');
 
     try {
-      const { supabase } = await import('./lib/supabase');
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const adminEmail = import.meta.env.VITE_ADMIN_EMAIL;
 
-      if (error) {
-        setLoginError('بيانات الدخول غير صحيحة');
-      } else {
+      if (userCredential.user.email === adminEmail) {
         setIsAdmin(true);
         setShowLogin(false);
         setShowPanel(true);
         setEmail('');
         setPassword('');
         showToast('أهلاً بك يا مدير الموقع');
+      } else {
+        setLoginError('ليس لديك صلاحيات المدير');
+        await signOut(auth);
       }
-    } catch (err) {
-      setLoginError('حدث خطأ أثناء الاتصال');
+    } catch (err: any) {
+      console.error('Login error:', err);
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        setLoginError('بيانات الدخول غير صحيحة');
+      } else {
+        setLoginError('حدث خطأ أثناء الاتصال');
+      }
     }
   };
 
   const handleLogout = async () => {
-    const { supabase } = await import('./lib/supabase');
-    await supabase.auth.signOut();
+    await signOut(auth);
     setIsAdmin(false);
     setShowPanel(false);
     showToast('تم تسجيل الخروج بنجاح');
@@ -189,7 +198,7 @@ export default function App() {
               دخول المدير
             </h3>
             <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>
-              أدخل البريد وكلمة السر (Supabase)
+              أدخل البريد وكلمة السر (Firebase)
             </p>
 
             <form onSubmit={handleLogin}>
