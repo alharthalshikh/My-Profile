@@ -1,8 +1,10 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { type ProfileData, defaultData } from '../types';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/firebase';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 
 const STORAGE_KEY = 'profile-data';
+const FIREBASE_DOC_PATH = { collection: 'settings', id: 'profile' };
 
 interface DataContextType {
     data: ProfileData;
@@ -34,23 +36,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
         return defaultData;
     });
 
-    // 1. Fetch data from Supabase and subscribe to changes
+    // 1. Fetch data from Firebase and subscribe to changes
     useEffect(() => {
         let isMounted = true;
+        const docRef = doc(db, FIREBASE_DOC_PATH.collection, FIREBASE_DOC_PATH.id);
 
+        // Initial Fetch
         const fetchData = async () => {
             try {
-                const { data: supabaseData } = await supabase
-                    .from('profiles')
-                    .select('content')
-                    .eq('id', 1)
-                    .single();
-
-                if (isMounted && supabaseData && supabaseData.content) {
-                    setData(supabaseData.content);
+                const docSnap = await getDoc(docRef);
+                if (isMounted && docSnap.exists()) {
+                    setData(docSnap.data() as ProfileData);
                 }
             } catch (err) {
-                console.error('Supabase fetch error:', err);
+                console.error('Firebase fetch error:', err);
             } finally {
                 if (isMounted) setLoading(false);
             }
@@ -59,18 +58,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
         fetchData();
 
         // Subscribe to real-time changes
-        const subscription = supabase
-            .channel('profile-changes')
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: 'id=eq.1' }, (payload) => {
-                if (payload.new && payload.new.content && isMounted) {
-                    setData(payload.new.content);
-                }
-            })
-            .subscribe();
+        const unsubscribe = onSnapshot(docRef, (docSnap) => {
+            if (isMounted && docSnap.exists()) {
+                setData(docSnap.data() as ProfileData);
+            }
+        }, (err) => {
+            console.error('Firebase snapshot error:', err);
+        });
 
         return () => {
             isMounted = false;
-            subscription.unsubscribe();
+            unsubscribe();
         };
     }, []);
 
@@ -79,17 +77,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     }, [data]);
 
-    // 3. Update Function (Sync to Supabase)
+    // 3. Update Function (Sync to Firebase)
     const updateData = async (newData: Partial<ProfileData>) => {
         setData(prev => {
             const updated = { ...prev, ...newData };
+            const docRef = doc(db, FIREBASE_DOC_PATH.collection, FIREBASE_DOC_PATH.id);
 
-            // Sync to Supabase - using the latest merged data
-            supabase
-                .from('profiles')
-                .upsert({ id: 1, content: updated })
-                .then(({ error }) => {
-                    if (error) console.error('Supabase sync error:', error);
+            // Sync to Firebase
+            setDoc(docRef, updated, { merge: true })
+                .catch((error) => {
+                    console.error('Firebase sync error:', error);
                 });
 
             return updated;
@@ -100,9 +97,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setData(defaultData);
         localStorage.removeItem(STORAGE_KEY);
 
-        await supabase
-            .from('profiles')
-            .upsert({ id: 1, content: defaultData });
+        const docRef = doc(db, FIREBASE_DOC_PATH.collection, FIREBASE_DOC_PATH.id);
+        await setDoc(docRef, defaultData);
     };
 
     const exportData = () => JSON.stringify(data, null, 2);

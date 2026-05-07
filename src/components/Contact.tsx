@@ -17,19 +17,16 @@ export default function Contact() {
         const message = (form.elements.namedItem('message') as HTMLTextAreaElement).value;
 
         try {
-            const { supabase } = await import('../lib/supabase');
+            const { db } = await import('../lib/firebase');
+            const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
 
-            // 1. Save directly to a dedicated table (The Strongest Path)
-            const { error: dbError } = await supabase
-                .from('contact_messages')
-                .insert([{
-                    name,
-                    contact_info: contactInfo,
-                    message,
-                    created_at: new Date().toISOString()
-                }]);
-
-            if (dbError) throw dbError;
+            // 1. Save directly to Firebase Firestore
+            await addDoc(collection(db, 'contact_messages'), {
+                name,
+                contact_info: contactInfo,
+                message,
+                created_at: serverTimestamp()
+            });
 
             // 2. Background Email (Trying to send to your email)
             const apiKey = import.meta.env.VITE_RESEND_API_KEY;

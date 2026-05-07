@@ -76,13 +76,19 @@ export default function AdminPanel({ onClose, onToast }: Props) {
     const fetchDbMessages = async () => {
         setMsgsLoading(true);
         try {
-            const { supabase } = await import('../lib/supabase');
-            const { data: msgs, error } = await supabase
-                .from('contact_messages')
-                .select('*')
-                .order('created_at', { ascending: false });
-            if (error) throw error;
-            setDbMessages(msgs || []);
+            const { db } = await import('../lib/firebase');
+            const { collection, getDocs, query, orderBy } = await import('firebase/firestore');
+
+            const q = query(collection(db, 'contact_messages'), orderBy('created_at', 'desc'));
+            const querySnapshot = await getDocs(q);
+
+            const msgs = querySnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+                created_at: doc.data().created_at?.toDate()?.toISOString() || new Date().toISOString()
+            }));
+
+            setDbMessages(msgs);
         } catch (err) {
             console.error('Error fetching messages:', err);
         } finally {
@@ -97,12 +103,13 @@ export default function AdminPanel({ onClose, onToast }: Props) {
     const deleteMessage = async (id: string) => {
         if (!confirm('هل تريد حذف هذه الرسالة؟')) return;
         try {
-            const { supabase } = await import('../lib/supabase');
-            const { error } = await supabase.from('contact_messages').delete().eq('id', id);
-            if (error) throw error;
+            const { db } = await import('../lib/firebase');
+            const { doc, deleteDoc } = await import('firebase/firestore');
+            await deleteDoc(doc(db, 'contact_messages', id));
             setDbMessages(prev => prev.filter(m => m.id !== id));
             onToast('تم حذف الرسالة');
         } catch (err) {
+            console.error('Error deleting message:', err);
             onToast('حدث خطأ أثناء الحذف');
         }
     };
