@@ -79,18 +79,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     // 3. Update Function (Sync to Firebase)
     const updateData = async (newData: Partial<ProfileData>) => {
-        setData(prev => {
-            const updated = { ...prev, ...newData };
+        try {
+            const updated = { ...data, ...newData };
+            setData(updated); // Update local state first for responsiveness
+
             const docRef = doc(db, FIREBASE_DOC_PATH.collection, FIREBASE_DOC_PATH.id);
-
-            // Sync to Firebase
-            setDoc(docRef, updated, { merge: true })
-                .catch((error) => {
-                    console.error('Firebase sync error:', error);
-                });
-
-            return updated;
-        });
+            await setDoc(docRef, updated, { merge: true });
+            console.log('Firebase sync successful');
+        } catch (error) {
+            console.error('Firebase sync error:', error);
+        }
     };
 
     const resetData = async () => {

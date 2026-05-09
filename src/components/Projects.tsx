@@ -11,8 +11,6 @@ export default function Projects() {
     const showNav = projects.length > 1;
     const project = projects[current];
 
-    if (projects.length === 0 || !project) return null;
-
     const goTo = (index: number, dir: 'next' | 'prev' = 'next') => {
         if (animating || index === current) return;
         setAnimating(true);
@@ -27,10 +25,12 @@ export default function Projects() {
     const prev = () => goTo((current - 1 + projects.length) % projects.length, 'prev');
 
     useEffect(() => {
-        if (!showNav || isPaused) return;
+        if (!showNav || isPaused || projects.length === 0) return;
         const timer = setInterval(next, 4500);
         return () => clearInterval(timer);
     }, [showNav, isPaused, projects.length, current]);
+
+    if (projects.length === 0 || !project) return null;
 
     return (
         <section id="projects" className="projects-section">
